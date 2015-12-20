@@ -248,6 +248,7 @@ public class Frame extends javax.swing.JFrame {
 				byte[] content = jTextArea1.getText().getBytes("UTF-8");
 				message = new byte[content.length+1];
 				message[0] = TYPE_TEXT;
+				System.arraycopy(content, 0, message, 1, content.length);
 			}
 			else {
 				byte[] fileContent = readFile(aFile);
@@ -287,7 +288,7 @@ public class Frame extends javax.swing.JFrame {
 			byte[] message = chiper.decrypt(jPasswordField1.getPassword());
 			if (message != null) {
 				if (message[0] == TYPE_TEXT) {
-					jTextArea1.setText(new String(message, 1, message.length-1));
+					jTextArea1.setText(new String(message, 1, message.length-1, "UTF-8"));
 				}
 				else {
 					int fileNameLength = message[4];
