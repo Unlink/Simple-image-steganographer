@@ -7,7 +7,10 @@ package sk.uniza.duracik2.ImgSteganography;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.imageio.ImageIO;
@@ -23,6 +26,11 @@ import javax.swing.filechooser.FileNameExtensionFilter;
  * @author Unlink
  */
 public class Frame extends javax.swing.JFrame {
+	
+	private static final int TYPE_TEXT = 1;
+	private static final int TYPE_FILE = 2;
+	
+	private File aFile;
 
     /** Creates new form Frame */
     public Frame() {
@@ -30,9 +38,11 @@ public class Frame extends javax.swing.JFrame {
 		fileOpener1.setFilter(new FileNameExtensionFilter("Obrázky", ImageIO.getReaderFileSuffixes()));
 		setLocationRelativeTo(null);
 		fileOpener1.addFileOpenListener((ActionEvent paE) -> {
+			aFile = null;
 			if (fileOpener1.getFile() != null) {
 				imageThumbnailer1.setImgFile(fileOpener1.getFile());
 				jButton1.setEnabled(true);
+				jButton3.setEnabled(true);
 				//Len png a bmp su bezstratové, takže ich môžme dekodovať
 				jButton2.setEnabled(
 					fileOpener1.getFile().getName().endsWith(".png") 
@@ -42,6 +52,7 @@ public class Frame extends javax.swing.JFrame {
 			else {
 				jButton1.setEnabled(false);
 				jButton2.setEnabled(false);
+				jButton3.setEnabled(false);
 			}
 		});
 		jTextArea1.getDocument().addDocumentListener(new DocumentListener() {
@@ -83,6 +94,7 @@ public class Frame extends javax.swing.JFrame {
         jButton1 = new javax.swing.JButton();
         jButton2 = new javax.swing.JButton();
         jLabel3 = new javax.swing.JLabel();
+        jButton3 = new javax.swing.JButton();
         jPanel2 = new javax.swing.JPanel();
         jLabel2 = new javax.swing.JLabel();
         imageThumbnailer1 = new sk.uniza.duracik2.ImgSteganography.ImageThumbnailer();
@@ -125,6 +137,14 @@ public class Frame extends javax.swing.JFrame {
         jLabel3.setFont(new java.awt.Font("Monospaced", 0, 10)); // NOI18N
         jLabel3.setText("0");
 
+        jButton3.setText("Add File");
+        jButton3.setEnabled(false);
+        jButton3.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButton3ActionPerformed(evt);
+            }
+        });
+
         javax.swing.GroupLayout jPanel1Layout = new javax.swing.GroupLayout(jPanel1);
         jPanel1.setLayout(jPanel1Layout);
         jPanel1Layout.setHorizontalGroup(
@@ -135,6 +155,8 @@ public class Frame extends javax.swing.JFrame {
                         .addComponent(jButton1)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                         .addComponent(jButton2)
+                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                        .addComponent(jButton3)
                         .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
                         .addComponent(jLabel3))
                     .addGroup(jPanel1Layout.createSequentialGroup()
@@ -159,7 +181,8 @@ public class Frame extends javax.swing.JFrame {
                 .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
                     .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
                         .addComponent(jButton1)
-                        .addComponent(jButton2))
+                        .addComponent(jButton2)
+                        .addComponent(jButton3))
                     .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
                         .addComponent(jLabel3)
                         .addContainerGap())))
@@ -218,7 +241,28 @@ public class Frame extends javax.swing.JFrame {
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
 		try {
 			ImgSteganograph chiper = new ImgSteganograph(fileOpener1.getFile());
-			if (!chiper.encrypt(jPasswordField1.getPassword(), jTextArea1.getText().getBytes("UTF-8"))) {
+			
+			byte[] message;
+			
+			if (aFile == null) {
+				byte[] content = jTextArea1.getText().getBytes("UTF-8");
+				message = new byte[content.length+1];
+				message[0] = TYPE_TEXT;
+			}
+			else {
+				byte[] fileContent = readFile(aFile);
+				byte[] fileName = aFile.getName().getBytes("UTF-8");
+				message = new byte[5+fileName.length+fileContent.length];
+				message[0] = TYPE_FILE;
+				message[1] = (byte) (fileName.length >> 24);
+				message[2] = (byte) (fileName.length >> 16);
+				message[3] = (byte) (fileName.length >> 8);
+				message[4] = (byte) fileName.length;
+				System.arraycopy(fileName, 0, message, 5, fileName.length);
+				System.arraycopy(fileContent, 0, message, 5+fileName.length, fileContent.length);
+			}
+			
+			if (!chiper.encrypt(jPasswordField1.getPassword(), message)) {
 				JOptionPane.showMessageDialog(this, "Vyberte prosím väčší obrázok");
 				return;
 			}
@@ -242,7 +286,29 @@ public class Frame extends javax.swing.JFrame {
 			ImgSteganograph chiper = new ImgSteganograph(fileOpener1.getFile());
 			byte[] message = chiper.decrypt(jPasswordField1.getPassword());
 			if (message != null) {
-				jTextArea1.setText(new String(message));
+				if (message[0] == TYPE_TEXT) {
+					jTextArea1.setText(new String(message, 1, message.length-1));
+				}
+				else {
+					int fileNameLength = message[4];
+					fileNameLength += message[3] << 8;
+					fileNameLength += message[2] << 16;
+					fileNameLength += message[1] << 24;
+					byte[] fileName = new byte[fileNameLength];
+					System.arraycopy(message, 5, fileName, 0, fileNameLength);
+					jTextArea1.setText("Súbor: \n\t"+new String(fileName));
+					JFileChooser jfc = new JFileChooser();
+					jfc.setSelectedFile(new File(new String(fileName)));
+					if (jfc.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+						File f = jfc.getSelectedFile();
+						try(FileOutputStream fos = new FileOutputStream(f)) {
+							fos.write(message, 5+fileNameLength, message.length-5-fileNameLength);
+						}
+						catch (IOException ex) {
+							//pass
+						}
+					}
+				}
 			}
 			else {
 				JOptionPane.showMessageDialog(this, "Nepodarilo sa prečítať text");
@@ -254,6 +320,30 @@ public class Frame extends javax.swing.JFrame {
 		
     }//GEN-LAST:event_jButton2ActionPerformed
 
+    private void jButton3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton3ActionPerformed
+		JFileChooser jfc = new JFileChooser();
+		if (jfc.showOpenDialog(this) == JFileChooser.APPROVE_OPTION) {
+			aFile = jfc.getSelectedFile();
+			jTextArea1.setText("Súbor: \n\t"+aFile.getName());
+		}
+		else {
+			aFile = null;
+			jTextArea1.setText("");
+		}
+    }//GEN-LAST:event_jButton3ActionPerformed
+
+	private byte[] readFile(File paFile) {
+		try {
+			RandomAccessFile f = new RandomAccessFile(paFile, "r");
+			byte[] b = new byte[(int)f.length()];
+			f.read(b);
+			return b;
+		}
+		catch (IOException ex) {
+			return new byte[0];
+		}
+	}
+	
     /**
      * @param args the command line arguments
      */
@@ -286,6 +376,7 @@ public class Frame extends javax.swing.JFrame {
     private sk.uniza.duracik2.ImgSteganography.ImageThumbnailer imageThumbnailer1;
     private javax.swing.JButton jButton1;
     private javax.swing.JButton jButton2;
+    private javax.swing.JButton jButton3;
     private javax.swing.JLabel jLabel1;
     private javax.swing.JLabel jLabel2;
     private javax.swing.JLabel jLabel3;
